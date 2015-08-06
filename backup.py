@@ -4,7 +4,7 @@ sources to a destination. Full backups copy all files from the source location
 to the backup location and increments copy the files to the new increment only if the
 date modified is newer than it is in the previous increments or the full backup.
 
-Copyright (C) 2015  James Benson (jmbensonn@gmail.com)
+Copyright (C) 2015  James Benson - jmbensonn@gmail.com
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,8 +19,8 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
->> Version: 0.3.0
->> Date: 05-08-2015
+>> Version: 0.3.2
+>> Date: 06-08-2015
 """
 
 import sys;
@@ -39,13 +39,10 @@ BACKUP_USAGE = "Usage: backup.py [-f|-i] source+ destination"
 TYPE_FULL = "Full"
 TYPE_INCREMENT = "Increment";
 
-## What were you for?
-#interface = None;
-
 class Interface(object):
 	"""Provides a command line interface for creating backups."""
 
-	def main():
+	def main(self):
 		mode = 0;
 		FULL = 1;
 		INC = 2;
@@ -98,7 +95,7 @@ class Interface(object):
 			except NoFullBackupError as nf:
 				Interface.println("Cannot Create Increment: No previous full backup found.");
 			except:
-				Interface.println("Something Happened.\nBackup Terminated.");
+				Interface.println("Something Happened\nBackup Terminated");
 
 		except getopt.GetoptError:
 			terminate("Invalid option found.\n%s" % BACKUP_USAGE);
@@ -193,6 +190,7 @@ class Backup(metaclass=ABCMeta):
 			relpath = relpath.lstrip(os.sep);  # remove any leading path seperators
 			for fname in filenames:
 				self.backup_file(os.path.join(relpath, fname));
+		Interface.println(""); # print a new line char \n after backup_file called for all files
 		self.copy.start();
 		self.copy.show_errors();
 
@@ -208,7 +206,7 @@ class Backup(metaclass=ABCMeta):
 			self.backup_name = self.get_backup_name(self.sources[src_num]);
 		except IndexError:
 			raise NoSourceError();
-		Interface.println("Start Backup %s of %s: %s" % (src_num + 1, len(self.sources), self.backup_name));
+		Interface.println("Starting Backup %s of %s: %s" % (src_num + 1, len(self.sources), self.backup_name));
 		if self.destination == None:
 			raise NoDestinationError();
 		self.backup_version = self.new_backup_version(self.destination, self.backup_name);
@@ -407,7 +405,8 @@ class Full(Backup):
 	def backup_file(self, rel_filepath):
 		self.copy.add(os.path.join(self.sources[self.current_source], rel_filepath),
 			os.path.join(self.backup_path, os.path.dirname(rel_filepath)));
-		Interface.println("Found %s files." % ++self.c_files);
+		self.c_files += 1;
+		Interface.println("\rFound %s files" % self.c_files, "");
 
 	def new_backup_version(self, destination, backup_name):
 		"""Creates the version name for a new full backup.
@@ -483,11 +482,11 @@ class Increment(Backup):
 			     increase is 2: +1 to modified
 				 increase is 3: +1 to unmodified"""
 		if increase == 1:
-			++self.c_new;
+			self.c_new += 1;
 		elif increase == 2:
-			++self.c_modified;
+			self.c_modified += 1;
 		elif increase == 3:
-			++self.c_unmodified;
+			self.c_unmodified += 1;
 		Interface.println("\rNew: %d / Modified: %d / Unmodified: %d" % (self.c_new, self.c_modified, self.c_unmodified), "");
 
 	def new_backup_version(self, destination, backup_name):
@@ -536,8 +535,12 @@ class Copying(object):
 		c = 0;
 		for s, d in self.copylist:
 			self.copy_file(s, d);
-			Interface.println("\rCopied %s of %s" % (++c, len(self.copylist)), "");
-		Interface.println("\nCopying Complete");
+			c += 1;
+			Interface.println("\rCopied %d of %d" % (c, len(self.copylist)), "");
+		if c > 0:
+			Interface.println("\nCopying Complete");
+		else:
+			Interface.println("No Files To Copy");
 
 	def copy_file(self, source_file, destination_directory):
 		"""Copies a source file to the destination directory.
