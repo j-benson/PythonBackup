@@ -14,3 +14,7 @@
     Counters in the UI weren't incrementing, stayed at zero. Also some of the
     printlns weren't showing as expected because of a couple of missing \r and
     \n chars.
+	
+#### Version: 0.3.3 - 26/08/2015
+    New files are now added to the copy list and copied to the backup location.
+

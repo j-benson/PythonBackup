@@ -19,8 +19,8 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
->> Version: 0.3.2
->> Date: 06-08-2015
+>> Version: 0.3.3
+>> Date: 26-08-2015
 """
 
 import sys;
@@ -463,12 +463,14 @@ class Increment(Backup):
 				if self.needs_backup(src_filepath, b_filepath):
 					self.copy.add(src_filepath, os.path.join(self.backup_path,
 						os.path.dirname(rel_filepath)));
-					self.show_progress(2);
+					self.show_progress(2); # modified file
 				else:
-					self.show_progress(3);
+					self.show_progress(3); # unmodified file
 				break;
 		if not found:
-			self.show_progress(1);
+			self.copy.add(os.path.join(self.sources[self.current_source], rel_filepath), 
+				os.path.join(self.backup_path, os.path.dirname(rel_filepath)));
+			self.show_progress(1); # new file
 
 	def needs_backup(self, s, b):
 		"""Return true if the file s needs backing up to the new increment
@@ -525,7 +527,7 @@ class Copying(object):
 		self.copylist.append((source_file, destination_file));
 
 	def add_error(self, msg, src):
-		self.errors.append("%s: %s" % msg, src);
+		self.errors.append("%s: %s" % (msg, src));
 
 	def show_errors(self):
 		for e in self.errors:
