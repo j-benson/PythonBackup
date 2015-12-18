@@ -14,7 +14,13 @@
     Counters in the UI weren't incrementing, stayed at zero. Also some of the
     printlns weren't showing as expected because of a couple of missing \r and
     \n chars.
-	
+
 #### Version: 0.3.3 - 26/08/2015
     New files are now added to the copy list and copied to the backup location.
 
+	Bug Found: Crashes when destination file path is too long.
+
+#### Version: 0.3.4 - 15/09/2015
+    Terminate methods were not being called properly.
+    Also tried and failed to catch all exceptions when copying - still errors when
+    file path is too long.

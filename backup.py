@@ -19,8 +19,8 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
->> Version: 0.3.3
->> Date: 26-08-2015
+>> Version: 0.3.4
+>> Date: 15-09-2015
 """
 
 import sys;
@@ -49,7 +49,7 @@ class Interface(object):
 
 		try:
 			if len(sys.argv[1:]) == 0:
-				terminate(BACKUP_USAGE);
+				Interface.terminate(BACKUP_USAGE);
 
 			options, args = getopt.getopt(sys.argv[1:], "fi", ["full", "increment"]);
 			# options full or inc backup, args sources and last arg destination
@@ -58,12 +58,12 @@ class Interface(object):
 					if mode == 0:
 						mode = FULL;
 					else:
-						terminate("Must select either -f/--full or i/--increment.");
+						Interface.terminate("Must select either -f/--full or -i/--increment.");
 				if o == "-i" or o == "--increment":
 					if mode == 0:
 						mode = INC;
 					else:
-						terminate("Must select either -f/--full or i/--increment.");
+						Interface.terminate("Must select either -f/--full or -i/--increment.");
 
 			# For the modes full and increment the args will be a list of sources followed by the destination.
 			# Any trailing slashes will be removed.
@@ -81,10 +81,12 @@ class Interface(object):
 					else:
 						if not backup.set_destination(a):
 							Interface.println("Destination not found: %s" % a);
+			else:
+				Interface.terminate("Select option -f/--full or -i/--increment");
 
 			# Check the options and args provided by the user.
 			if not backup.has_sources() or not backup.has_destination():
-				terminate("No valid sources or destination.", 1);
+				Interface.terminate("", 1);
 
 			try:
 				backup.backup();
@@ -98,7 +100,7 @@ class Interface(object):
 				Interface.println("Something Happened\nBackup Terminated");
 
 		except getopt.GetoptError:
-			terminate("Invalid option found.\n%s" % BACKUP_USAGE);
+			Interface.terminate("Invalid option found.\n%s" % BACKUP_USAGE);
 
 	@staticmethod
 	def println(line, end="\n"):
@@ -468,7 +470,7 @@ class Increment(Backup):
 					self.show_progress(3); # unmodified file
 				break;
 		if not found:
-			self.copy.add(os.path.join(self.sources[self.current_source], rel_filepath), 
+			self.copy.add(os.path.join(self.sources[self.current_source], rel_filepath),
 				os.path.join(self.backup_path, os.path.dirname(rel_filepath)));
 			self.show_progress(1); # new file
 
@@ -559,6 +561,8 @@ class Copying(object):
 		except FileNotFoundError:
 			self.add_error("Not Found", source_file);
 		except (shutil.Error, OSError) as e:
+			self.add_error("Copy Failed", source_file);
+		except:
 			self.add_error("Copy Failed", source_file);
 
 # --- Custom Errors ---
