@@ -24,3 +24,5 @@
     Terminate methods were not being called properly.
     Also tried and failed to catch all exceptions when copying - still errors when
     file path is too long.
+
+    Current working version.

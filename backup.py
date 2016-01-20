@@ -19,131 +19,78 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
->> Version: 0.3.4
->> Date: 15-09-2015
+>> Version: 0.4.0
+>> Date: 20-01-2016
 """
-
+import abc;
 import sys;
-import getopt;
 import os;
 import shutil;
+import getopt;
+import datetime;
 import re;
-from datetime import datetime;
-from abc import ABCMeta, abstractmethod;
 
-# Full backup: copy every file from the source to the destination.
-# Incremental backup: only copy files into new increment if they changed from any previous increment or the full backup.
-
-BACKUP_USAGE = "Usage: backup.py [-f|-i] source+ destination"
-
-TYPE_FULL = "Full"
-TYPE_INCREMENT = "Increment";
-
-class Interface(object):
-	"""Provides a command line interface for creating backups."""
-
-	def main(self):
-		mode = 0;
-		FULL = 1;
-		INC = 2;
+class CLI:
+    def main(self):
+        # Required options
+        backup_type = None;
 
 		try:
 			if len(sys.argv[1:]) == 0:
-				Interface.terminate(BACKUP_USAGE);
+				self.print_help();
+                self.terminate("", 1);
 
 			options, args = getopt.getopt(sys.argv[1:], "fi", ["full", "increment"]);
-			# options full or inc backup, args sources and last arg destination
 			for o, v in options:
-				if o == "-f" or o == "--full":
-					if mode == 0:
-						mode = FULL;
-					else:
-						Interface.terminate("Must select either -f/--full or -i/--increment.");
-				if o == "-i" or o == "--increment":
-					if mode == 0:
-						mode = INC;
-					else:
-						Interface.terminate("Must select either -f/--full or -i/--increment.");
+				if not backup_type and BackupType.is_backup(o):
+					backup_type = BackupType.get_backup(o);
 
-			# For the modes full and increment the args will be a list of sources followed by the destination.
-			# Any trailing slashes will be removed.
-			if mode == FULL or mode == INC:
-				backup = None;
-				if mode == FULL:
-					backup = Full();
-				elif mode == INC:
-					backup = Increment();
+            if not backup_type:
+                self.terminate("Required Option Missing: -f/--full OR -i/--increment");
 
-				for i, a in enumerate(args):
-					if i < len(args) - 1:
-						if not backup.add_source(a):
-							Interface.println("Source not found: %s" % a);
-					else:
-						if not backup.set_destination(a):
-							Interface.println("Destination not found: %s" % a);
-			else:
-				Interface.terminate("Select option -f/--full or -i/--increment");
+			for i, a in enumerate(args):
+				if i < len(args) - 1:
+					if not backup.add_source(a):
+						print("Source not found: %s" % a);
+				else:
+					if not backup.set_destination(a):
+						print("Destination not found: %s" % a);
 
 			# Check the options and args provided by the user.
 			if not backup.has_sources() or not backup.has_destination():
-				Interface.terminate("", 1);
+				self.terminate("", 1);
 
 			try:
-				backup.backup();
+
+
+
 			except TypeError as te:
-				Interface.println("TypeError: %s" % te);
+				self.terminate("TypeError: %s" % te, 1);
 			except IndexError as ie:
-				Interface.println("IndexError: %s" % ie);
+				self.terminate("IndexError: %s" % ie, 1);
 			except NoFullBackupError as nf:
-				Interface.println("Cannot Create Increment: No previous full backup found.");
+				self.terminate("Cannot Create Increment: No previous full backup found.", 1);
 			except:
-				Interface.println("Something Happened\nBackup Terminated");
+				self.terminate("Something Happened\nBackup Terminated", 1);
 
 		except getopt.GetoptError:
-			Interface.terminate("Invalid option found.\n%s" % BACKUP_USAGE);
+			self.terminate("Invalid option found.", 1);
 
-	@staticmethod
-	def println(line, end="\n"):
-		"""Controls printing to the terminal."""
-		if __name__ == "__main__": # and if verbose mode on. TODO
-			print(line, end=end);
+    def print_help(self):
+        pass
 
-	@staticmethod
-	def printerr(line, end="\n"):
-		"""Controls printing to the terminal."""
-		if __name__ == "__main__":
-			print(line, end=end);
-
-	@staticmethod
-	def terminate(message, code = 0):
-		Interface.println(message);
+	def terminate(message = "", code = 0):
+        if message:
+            print(message);
 		sys.exit(code);
 
-class Backup(metaclass=ABCMeta):
-	"""Abstract class for the different types of backups. Provides
-	methods needed to create a new backup, the rest is done by the subclasses
-	by overriding the backup abstract method.
+class Backup:
+    def __init__(self):
+        self.container = None;
+        #Need to be given a destination location for the container.
+        self.sources = []; #Local source
 
-	Attributes
-	----------
-	sources : [string]
-		A list of directory filepaths to backup.
-	destination : string
-		The directory filepath to save the backup to.
-	"""
-
-	def __init__(self):
-		self.sources = [];
-		self.destination = None;
-
-		self.copy = None
-		self.current_source = -1;
-		self.backup_name = None;
-		self.backup_version = None;
-		self.backup_path = None;
-		self.last_full = None;
-
-	def add_source(self, directory):
+    def add_source(self, directory):
 		"""Adds a source to the source list for the backup.
 		Returns true if added, false if not. Sources will not be set if
 		the directory does not exist."""
@@ -151,8 +98,9 @@ class Backup(metaclass=ABCMeta):
 			self.sources.append(os.path.abspath(directory));
 			return True;
 		else:
-			Interface.println("Source Not Found: \n - %s" % directory);
+			#Interface.println("Source Not Found: \n - %s" % directory);
 			return False;
+        #Should raise an exception
 
 	def has_sources(self):
 		"""Whether any sources were set.
@@ -168,404 +116,288 @@ class Backup(metaclass=ABCMeta):
 			return True;
 		else:
 			return False;
+        #Should raise an exception
 
 	def has_destination(self):
 		"""Whether a destination was set.
 		Returns true if has destination, false if not."""
 		return self.destination != None;
 
-	def backup(self):
-		"""This one does the backup."""
-		for i, src in enumerate(self.sources):
-			self.backup_source(i);
+    def get_progress_string(self):
+        pass # add own info(eg source) and timings and get the progress from the type
 
-	def backup_source(self, src_num):
-		"""Backs up a source in the sources list.
-		src_num : int
-			The index of the source from the sources list.
-		Raises
-			IndexError if src_num is not valid number.
-			NoFullBackupError if no last backup when required (increment only)"""
-		self.backup_init(src_num);
-		for path, dirnames, filenames in os.walk(self.sources[src_num]):
-			relpath = path[len(self.sources[src_num]):]  # Remove the dir filepath leaving only a relative path to the file.
-			relpath = relpath.lstrip(os.sep);  # remove any leading path seperators
-			for fname in filenames:
-				self.backup_file(os.path.join(relpath, fname));
-		Interface.println(""); # print a new line char \n after backup_file called for all files
-		self.copy.start();
-		self.copy.show_errors();
+    def start(self, backup_type):
+        pass
+    #Need some methods for enumerating the filesystem
 
-	def backup_init(self, src_num):
-		"""Sets up the source for backup.
-		src_num : int
-			The index of the source from the sources list.
-		Raises
-			IndexError if src_num is not valid number.
-			NoFullBackupError if no last backup when required (increment only)"""
-		self.current_source = src_num;
-		try:
-			self.backup_name = self.get_backup_name(self.sources[src_num]);
-		except IndexError:
-			raise NoSourceError();
-		Interface.println("Starting Backup %s of %s: %s" % (src_num + 1, len(self.sources), self.backup_name));
-		if self.destination == None:
-			raise NoDestinationError();
-		self.backup_version = self.new_backup_version(self.destination, self.backup_name);
-		self.backup_path = os.path.join(self.destination, self.backup_name, self.backup_version);
-		self.copy = Copying();
+# === BackupTypes ===
+class BackupType:
+    __metaclass__=abc.ABCMeta;
+    def __init__(self):
+        pass
 
-	@abstractmethod
-	def backup_file(self, rel_filepath):
-		"""How the different backups backup each file.
-		rel_filepath : str
-			The filepath relative to the source filepath."""
+    @staticmethod
+    def is_backup(self, identifier):
+        return identifier == "--full" or identifier == "-f"
+            or identifier == "--inc" or identifier == "-i";
 
-	@staticmethod
-	def full_version(name):
-		"""Extracts the full backup version number from the name of the container.
-		Full backups are named YYYY-MM-DD_HHMM__Full-n where n is the version.
-		Can also be used to test if the directory is a full backup.
+    @staticmethod
+    def get_backup(identifier):
+        if (identifier == "--full" or identifier == "-f"):
+            return Full();
+        if (identifier == "--inc" or identifier == "-i"):
+            return Increment();
+        raise TypeError("Type %s not recognised" % identifier);
 
-		Returns the version number of the full backup or None if the direcory name
-		is not a full backup."""
-		if not isinstance(name, str):
-			raise TypeError("full_version - The container name must be a string.");
+    @abc.abstractmethod
+    def backup_file(self, path):
 
-		regex = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}__' + TYPE_FULL + r'-([0-9]{1,})$');
-		match = regex.search(name);
-		if match:
-			return int(match.group(1));
-		else:
-			return None;
+    @abc.abstractmethod
+    def get_progress_string(self):
 
-	@staticmethod
-	def increment_version(name):
-		"""Extracts the increment version number from the name of the container.
-		Increments are named YYYY-MM-DD_HHMM__Increment-n-m where n is the
-		full backup version and m is the increment version.
-		Also used to test if the directory is an increment.
-		name : string
-			The name of the container of the full backup.
-		Returns : (int, int) or None
-			A pair containing the full backup version number and the increment
-			version number or None if the direcory name is not an increment.
-			Example:
-				(full_version, increment_version)"""
-		if not isinstance(name, str):
-			raise TypeError("increment_version - The container name must be a string.");
+class Full(BackupType):
+    def __init__(self):
+        self.count_new = 0;
 
-		regex = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}__" + TYPE_INCREMENT + "-([0-9]{1,})-([0-9]{1,})$");
-		match = regex.search(name);
-		if match:
-			return (int(match.group(1)), int(match.group(2)));
-		else:
-			return None;
+    def backup_file(self, path):
+        """Always backup when doing a full backup."""
+        return True;
 
-	@staticmethod
-	def get_all_full_backups(directory):
-		"""Get a list of the full backups in the directory.
-		directory : string
-			The filepath to the directory containing the backups.
+    def get_progress_string(self):
+        return "New Files: %s" % self.count_new;
 
-		Returns : [(int, string)]
-			A list of pairs containing the version number of the backup and the full filepath
-			to the backup.
-			The list is in ascending order of version number.
-			An empty list is returned when there are no backups in the directory
-			or the directory does not exist."""
+class Increment(BackupType):
+    def __init__(self):
+        self.count_new = 0;
+        self.count_modified = 0;
+        self.count_unmodified = 0;
 
-		if not isinstance(directory, str):
-			raise TypeError("The directory must be a string.");
+    def backup_file(self):
+        """Only backup a file if it is not in any previous backups or
+        if it has been modified since any previous backups."""
+        pass; # TODO: Increment backup_file choice. Needs location object
 
-		backups = [];
-		if os.path.isdir(directory):
-			for c in os.listdir(directory): #does this raise FileNotFoundError if not dir?
-				fullpath = os.path.join(directory, c);
-				if os.path.isdir(fullpath):
-					version = Backup.full_version(c);
-					if version:
-						backups.append((version, fullpath));
-			backups.sort();
-		#else
-		#TODO: raise error? yes
-		return backups;
+    def get_progress_string(self):
+        return "New: %s | Modified: %s | Unmodified: %s" %
+            (self.count_new, self.count_modified, self.count_unmodified);
+# --- End BackupTypes ---
 
-	@staticmethod
-	def get_full_backup(directory, version):
-		"""Get the filepath to a full backup by version number.
-		directory : str
-			The filepath to the directory containing all the backups.
-		version : int
-			The version number of the backup to return.
-		Returns : (int, str)
-			A pair containing the version number and the file path of the
-			backup: (version, path)"""
-		if not isinstance(version, int):
-			raise TypeError("The version must be an integer.");
+# === Filters === #
+class Filter(BackupType):
+    __metaclass__=abc.ABCMeta;
+    def __init__(self, backup = None):
+        self.backup = backup;
 
-		result = None;
-		backups = Backup.get_all_full_backups(directory);
-		for v, p in backups:
-			if v == version:
-				result = (v, p);
-				break;
-		return result;
+    @abc.abstractmethod
+    def backup_file(self, path):
+        """If the previous BackupType in backup returned false for backup_file
+        this must be honored otherwise the current BackupType may do its own check."""
 
-	@staticmethod
-	def get_last_full_backup(directory):
-		"""Gets the last full backup in the directory.
-		directory : str
-			The filepath to the directory containing the backups.
-		Returns : (int, str) or None
-			A pair with the version number and the filepath, or None if there are no
-			previous backups."""
+class ExcludeFileExtension(Filter):
+    def __init__(self, extension, backup = None):
+        super().__init__(backup);
+        self.extension = extension;
 
-		lastfull = None;
-		full_backups = Backup.get_all_full_backups(directory);
-		c = len(full_backups);
+    def backup_file(self, file):
+        if not self.backup.backup_file(path):
+            return false;
+
+        return file.getExtension() != self.extension;
+
+class ExcludeGTFileSize(Filter):
+    def backup_file(self, path):
+        if not self.backup.backup_file(path):
+            return false;
+
+        return true;
+
+class ExcludeLTFileSize(Filter):
+    def backup_file(self, path):
+        if not self.backup.backup_file(path):
+            return false;
+
+        return true;
+# --- End Filters ---
+
+# === BackupInfo ===
+class BackupInfo:
+    __metaclass__ = abc.ABCMeta;
+    def __init__(self, path):
+        """Path to the backups"""
+        self.path = path;
+        self.formatter = None;
+
+    @staticmethod # REVIEW: This doesn't really fit here either
+    def get_name_from_source(self, source):
+        name = os.path.basename(source);
+        if name == "":
+            # basename("C:\") would return ""
+            if os.name == "nt":
+                # Use drive letter in Windows
+                name = source[0]; # What if no drive letter?
+            elif os.name == "posix":
+                name = "root";
+            else:
+                pass
+            # TODO: Check if backup_name was set by user.
+            # do that first though..
+    return name;
+
+    def list(self):
+        backups = [];
+		for item in os.listdir(self.path):
+			if os.path.isdir(os.path.join(self.path, item)):
+                version = self.formatter.get_version(item);
+                if version: #(If valid version)
+                    backups.append((version, item));
+        return backups.sort();
+
+    def next_version(self):
+        next_version = 1;
+		backups = self.list();
+		c = len(backups);
 		if c > 0:
-			lastfull = full_backups[c-1];
-		return lastfull;
+			next_version = c+1;
+		return next_version;
 
-	@staticmethod
-	def get_increments_for(directory, version):
-		"""Get the list of increments for a full backup in the given directory.
-		directory : str
-			The filepath to the directory containing the backup versions.
-		version : int
-			The version number of the full backup.
-		Returns : [(int, string)]
-			A list of pairs with the increment number and the filepath to the increment."""
-		if not isinstance(directory, str):
-			raise TypeError("The directory must be a string.");
-		if not isinstance(version, int):
-			raise TypeError("The version must be an integer.");
+class FullBackupInfo(BackupInfo):
+    def __init__(self, path):
+        super().__init__(path);
+        self.formatter = FullVersionFormatter();
 
-		increments = [];
-		if os.path.isdir(directory):
-			for c in os.listdir(directory):
-				fullpath = os.path.join(directory, c);
-				if os.path.isdir(fullpath):
-					inc = Backup.increment_version(c);
-					# inc = (full, increment) or None
-					if inc and inc[0] == version:
-						increments.append((inc[1], fullpath));
-						# (increment_version, filepath)
-			increments.sort();
-			### REVIEW: This is VERY similar code to get full backups
-			### only change is what regex is used and what to append. maybe can simplify
-		else:
-			# REVIEW: Raise error dir does not exit?
-			pass;
-		return increments;
+class IncrementBackupInfo(BackupInfo):
+    def __init__(self, path, full_version):
+        super().__init__(path);
+        self.formatter = IncrementVerisonFormatter(full_version);
+# --- End BackupInfo ---
+class BackupItem:
+    pass # one of the BackupInfos ??maybe
 
-	def dir_datetime(self):
+# === BackupVersionFormatters ===
+class BackupVersionFormatter:
+    __metaclass__=abc.ABCMeta;
+    def __init__(self):
+        self.TYPE_FULL = "Full";
+        self.TYPE_INCREMENT = "Increment";
+
+    @abc.abstractmethod
+    def format(date, version):
+        """Create a formatted name to use for the backup version container."""
+    @abc.abstractmethod
+    def get_version(name):
+        """Get the version of the backup from the name."""
+    def valid_format(self, name):
+        return self.get_version(name) != None;
+    def format_datetime(self, date):
 		"""Get the datetime in the format wanted for the backup version."""
-		return datetime.now().strftime("%Y-%m-%d_%H%M");
+		return date.strftime("%Y-%m-%d_%H%M");
 
-	def get_backup_name(self, source):
-		# desintation - the destination filepath of the backup
-		# source - the source filepath
-		name = "";
-		try:
-			name = os.path.basename(source);
-			if name == "":
-				# C:\ would return ""
-				if os.name == "nt": #and len(source) > 0;
-					# Use drive letter in Windows
-					name = source[0]; # What if no drive letter?
-				elif os.name == "posix":
-					name = "root";
-				else:
-					pass
-				# TODO: Check if backup_name was set by user.
-				# do that first though..
-		except TypeError:
-			# thrown by path.basename when len() fails
-			raise TypeError("Source must be a string.");
-		except IndexError:
-			raise IndexError("Source cannot be an empty string.");
-		return name;
+class FullVersionFormatter(BackupVersionFormatter):
+    def format(self, date, version):
+        return "%s__%s-%s" % (self.format_datetime(date), TYPE_FULL, version);
+    def get_version(self, name):
+        """Get an integer for the full version or None."""
+        version = None;
+        regex = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}__' + TYPE_FULL + r'-([0-9]{1,})$');
+		match = regex.search(name);
+		if match:
+			version = int(match.group(1));
+		return version;
 
-	@abstractmethod
-	def new_backup_version(self, destination, backup_name):
-		"""Creates the directory name for a new backup."""
+class IncrementVersionFormatter(BackupVersionFormatter):
+    def __init__(self, full_version):
+        self.full_version = full_version;
+    def format(self, date, version):
+        return "%s__%s-%s-%s" % (self.format_datetime(date), TYPE_INCREMENT, self.full_version, version);
+    def get_version(self, name):
+        """Get an integer for the increment version or None."""
+        version = None;
+        regex = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}__" + TYPE_INCREMENT + "-([0-9]{1,})-([0-9]{1,})$");
+		match = regex.search(name);
+		if match and match.group(1) == str(self.full_version):
+			version = int(match.group(2));
+		return version;
+# --- End BackupVersionFormatters ---
 
-class Full(Backup):
-	"""Provides full backup functionality.
-	A full backup copies all files from the given sources to the given destination."""
+# === Containers ===
+class Container(object):
+    __metaclass__ = abc.ABCMeta;
+    def __init__(self, name, location):
+        self.files = [];
+        self.total_size = 0;
+        self.name = name;
+        self.location = location;
 
-	def __init__(self):
-		super().__init__();
-		self.C_files = 0;
+        self.start_time = None;
+        self.copied_files = 0;
+        self.copied_size = 0;
 
-	def backup_init(self, src_num):
-		super().backup_init(src_num);
-		self.c_files = 0;
+    @abstractmethod
+    def copy_file(self):
 
-	def backup_file(self, rel_filepath):
-		self.copy.add(os.path.join(self.sources[self.current_source], rel_filepath),
-			os.path.join(self.backup_path, os.path.dirname(rel_filepath)));
-		self.c_files += 1;
-		Interface.println("\rFound %s files" % self.c_files, "");
+    def file_count(self):
+        """Number of files inside the container."""
+        return len(self.files);
 
-	def new_backup_version(self, destination, backup_name):
-		"""Creates the version name for a new full backup.
-		Also sets the last_full property.
-		destination : str
-			The filepath to the destination.
-		backup_name : str
-			The name for the backup.
-		Returns : str
-			The name for the new backup version."""
-		# Naming Conventions for Full Backups
-		# --------------------------------
-		# Full backups are named "yyyy-mm-dd_hhmm__Full-n" where n is the full version number.
-		self.last_full = self.get_last_full_backup(os.path.join(destination, backup_name));
-		if not self.last_full:
-			version = 0;
-		else:
-			version, path = self.last_full;
-		return "%s__%s-%s" % (self.dir_datetime(), TYPE_FULL, version + 1);
+    def file_size(self):
+        """Size in ___ of all the files together."""
+        return self.total_size;
 
+    def set_file_list(self, list):
+        self.files = list;
 
-class Increment(Backup):
-	"""Provides incremental backup functionality.
-	An increment compares previous increments and the full backup it relates to
-	only copies files that have been modified to the new increment."""
+    def add_file(self, path):
+        self.files.append(path);
+        self.total_size += 0; # TODO: Replace with files size.
 
-	def __init__(self):
-		super().__init__();
-		self.backup_name_path = None;
-		self.all_backups = None;
-		self.c_new = 0;
-		self.c_modified = 0;
-		self.c_unmodified = 0;
+    def copy_files(self):
+        self.start_time = datetime.datetime.now();
+        self.location.mkdir(path, self.name); #TODO: What is path?
+        for f in self.files:
+            self.copy_file(f);
 
-	def backup_init(self, src_num):
-		super().backup_init(src_num);
-		self.backup_name_path = os.path.join(self.destination, self.backup_name);
-		self.all_backups = Increment.get_increments_for(self.backup_name_path, self.last_full[0]);
-		self.all_backups.reverse();
-		self.all_backups.append(self.last_full);
-		self.c_new = 0;
-		self.c_modified = 0;
-		self.c_unmodified = 0;
+class LocalContainer(Container):
+    def copy_file(self, item):
+        """Copy one file in the container to the Location."""
+        location.copy_file(src, dest); # TODO: what is the src and dest (dest needs to include the container name)
 
-	def backup_file(self, rel_filepath):
-		"""Performs an incremental backup of the given sources to the given destination by
-		comparing the source to previous increments and the previous full backup."""
-		found = False;
-		for b_no, b_path in self.all_backups:
-			b_filepath = os.path.join(b_path, rel_filepath);
-			if os.path.isfile(b_filepath):
-				found = True;
-				src_filepath = os.path.join(self.sources[self.current_source], rel_filepath);
-				if self.needs_backup(src_filepath, b_filepath):
-					self.copy.add(src_filepath, os.path.join(self.backup_path,
-						os.path.dirname(rel_filepath)));
-					self.show_progress(2); # modified file
-				else:
-					self.show_progress(3); # unmodified file
-				break;
-		if not found:
-			self.copy.add(os.path.join(self.sources[self.current_source], rel_filepath),
-				os.path.join(self.backup_path, os.path.dirname(rel_filepath)));
-			self.show_progress(1); # new file
+class ZippedContainer(Container):
+    pass
+# TODO: If zipped location is remote then will have to create on local then upload.
 
-	def needs_backup(self, s, b):
-		"""Return true if the file s needs backing up to the new increment
-		compared to the already backed up file b."""
-		return os.path.getmtime(s) > os.path.getmtime(b);
+# === Locations ===
+class Location(object):
+    __metaclass__ = abc.ABCMeta;
+    def __init__(self):
+        self.path = "";
 
-	def show_progress(self, increase = 0):
-		"""Shows the progress of the increment and adds to the new, modified and
-		unmodified counters if increase is specified.
-			When increase is 1: +1 to new
-			     increase is 2: +1 to modified
-				 increase is 3: +1 to unmodified"""
-		if increase == 1:
-			self.c_new += 1;
-		elif increase == 2:
-			self.c_modified += 1;
-		elif increase == 3:
-			self.c_unmodified += 1;
-		Interface.println("\rNew: %d / Modified: %d / Unmodified: %d" % (self.c_new, self.c_modified, self.c_unmodified), "");
+    def copy_file(self, src, dest):
+        """Copies the local file at src to the destination on this Location."""
+        pass
+    def list_dir(self, dir):
+        """ Get two lists of directory names and filenames inside the directory
+        at the path in the pair ([dirs], [files])."""
+        pass
+    def mkdir(self, path, name):
+        pass
 
-	def new_backup_version(self, destination, backup_name):
-		"""Creates the version name for a new increment.
-		Also sets the last_full property.
-		Raises
-			NoFullBackupError if cannot create new version as there is no
-			previous full backup."""
-		# Naming Conventions for Increments
-		# --------------------------------
-		# Incremental backups are named "yyyy-mm-dd_hhmm__Increment-n-m"
-		# where n is the full version number and m is the increment version number.
-		backup_path = os.path.join(destination, backup_name);
-		self.last_full = self.get_last_full_backup(backup_path);
-		if self.last_full == None:
-			raise NoFullBackupError();
-		else:
-			version, path = self.last_full;
-			increments = Increment.get_increments_for(backup_path, version)
-		return "%s__%s-%s-%s" % (self.dir_datetime(), TYPE_INCREMENT, version, len(increments) + 1);
+class LocalLocation(Location):
+    def copy_file(self, src, dest):
+        shutil.copy2(src, dest);
+        # raises: PermissionError, FileNotFoundError, OSError, ?shutil.Error
+    def list_dir(self, path):
+        dirs = [];
+        files = [];
+        for item in os.listdir(path):
+            if os.path.isdir(item):
+                dirs.append(item);
+            if os.path.isfile(item):
+                files.append(item);
 
-class Copying(object):
-	"""Handles sequential copying.
-	Attributes
-	----------
-	copylist : [str]
-		A list if files to be copied.
-	errors [(str, str)]
-		A list of failed copies with a reason.
-	"""
-	def __init__(self):
-		self.copylist = [];
-		self.errors = [];
+class FTPLocation(Location):
+    pass
 
-	def add(self, source_file, destination_file):
-		self.copylist.append((source_file, destination_file));
-
-	def add_error(self, msg, src):
-		self.errors.append("%s: %s" % (msg, src));
-
-	def show_errors(self):
-		for e in self.errors:
-			Interface.printerr(e);
-
-	def start(self):
-		c = 0;
-		for s, d in self.copylist:
-			self.copy_file(s, d);
-			c += 1;
-			Interface.println("\rCopied %d of %d" % (c, len(self.copylist)), "");
-		if c > 0:
-			Interface.println("\nCopying Complete");
-		else:
-			Interface.println("No Files To Copy");
-
-	def copy_file(self, source_file, destination_directory):
-		"""Copies a source file to the destination directory.
-		Also copies file stats such as date modified.
-		If it cannot be copied it will be added to the errors list."""
-		# REVIEW: Does copy2 overwrite existing files.
-		if not os.path.exists(destination_directory):
-			os.makedirs(destination_directory);
-			# raises OSError if directory cannot be created.
-		try:
-			shutil.copy2(source_file, destination_directory);
-		except PermissionError:
-			self.add_error("Permission Denied", source_file);
-		except FileNotFoundError:
-			self.add_error("Not Found", source_file);
-		except (shutil.Error, OSError) as e:
-			self.add_error("Copy Failed", source_file);
-		except:
-			self.add_error("Copy Failed", source_file);
-
-# --- Custom Errors ---
+# === Errors ===
 class BackupError(Exception):
 	pass
 class NoFullBackupError(BackupError):
@@ -576,10 +408,7 @@ class NoDestinationError(BackupError):
 	pass
 class NoFilesToBackupError(BackupError):
 	pass
-
-
-# --- END CLASS DEFINITIONS ---
-
+# --- End Errors ---
 
 if __name__ == "__main__":
-	Interface().main();
+	CLI().main();
